@@ -15,7 +15,7 @@ read -p "是否启用susfs？(y/n，默认：y): " APPLY_SUSFS
 APPLY_SUSFS=${APPLY_SUSFS:-y}
 read -p "是否启用 KPM？(y-启用 KpatchNext独立kpm实现, n-关闭kpm，默认：n): " USE_PATCH_LINUX
 USE_PATCH_LINUX=${USE_PATCH_LINUX:-n}
-read -p "KSU分支版本(r=BakaSU, y=SukiSU Ultra, n=KernelSU Next, k=KSU, l=lkm模式(无内置KSU), 默认：r): " KSU_BRANCH
+read -p "KSU分支版本(r=BakaSU, f=FinaSU, y=SukiSU Ultra, n=KernelSU Next, k=KSU, l=lkm模式(无内置KSU), 默认：r): " KSU_BRANCH
 KSU_BRANCH=${KSU_BRANCH:-r}
 read -p "是否应用 lz4 1.10.0 & zstd 1.5.7 补丁？(y/n，默认：y): " APPLY_LZ4
 APPLY_LZ4=${APPLY_LZ4:-y}
@@ -40,6 +40,8 @@ if [[ "$KSU_BRANCH" == "y" || "$KSU_BRANCH" == "Y" ]]; then
   KSU_TYPE="SukiSU Ultra"
 elif [[ "$KSU_BRANCH" == "r" || "$KSU_BRANCH" == "R" ]]; then
   KSU_TYPE="BakaSU"
+elif [[ "$KSU_BRANCH" == "f" || "$KSU_BRANCH" == "F" ]]; then
+  KSU_TYPE="FinaSU"
 elif [[ "$KSU_BRANCH" == "n" || "$KSU_BRANCH" == "N" ]]; then
   KSU_TYPE="KernelSU Next"
 elif [[ "$KSU_BRANCH" == "k" || "$KSU_BRANCH" == "K" ]]; then
@@ -131,6 +133,17 @@ elif [[ "$KSU_BRANCH" == "n" || "$KSU_BRANCH" == "N" ]]; then
   cd ../common/drivers/kernelsu
   wget https://github.com/cctv18/oppo_oplus_realme_sm8650/raw/refs/heads/main/other_patch/apk_sign.patch
   patch -p2 -N -F 3 < apk_sign.patch || true
+elif [[ "$KSU_BRANCH" == "f" || "$KSU_BRANCH" == "F" ]]; then
+  echo ">>> 拉取 FinaSU 并设置版本..."
+  FINASU_REF="${FINASU_REF:-dev}"
+  curl -LSs "https://raw.githubusercontent.com/LyraVoid/FinaSU/${FINASU_REF}/kernel/setup.sh" | bash -s "${FINASU_REF}"
+  # FinaSU 的 Kbuild 只在当前目录生效，kbuild 会重置子目录的 ccflags-y，这里统一改成 subdir-ccflags-y
+  sed -i 's/^ccflags-y +=/subdir-ccflags-y +=/' ./FinaSU/kernel/Kbuild
+  echo 'subdir-ccflags-y += -I$(srctree)/drivers/kernelsu -I$(srctree)/drivers/kernelsu/include' >> ./FinaSU/kernel/Kbuild
+  cd ./FinaSU
+  KSU_VERSION=$(expr $(git rev-list --count HEAD) "+" 30000)
+  echo "[+] FinaSU 版本: $(git rev-parse HEAD) (KSU_VERSION=$KSU_VERSION)"
+  cd ..
 elif [[ "$KSU_BRANCH" == "k" || "$KSU_BRANCH" == "K" ]]; then
   echo ">>> 拉取 KernelSU (tiann/KernelSU) 并设置版本..."
   curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/refs/heads/main/kernel/setup.sh" | bash -s main
@@ -391,6 +404,9 @@ sed -i 's/check_defconfig//' ./common/build.config.gki
 # ===== 编译内核 =====
 echo ">>> 开始编译内核..."
 cd common
+# 兼容新版 clang：旧版 tools/lib/bpf 里存在 const 丢弃写法，clang20 + -Werror 会直接报错
+sed -i 's/^\(\s*\)char \*next_path;/\1const char *next_path;/' ./tools/lib/bpf/libbpf.c
+export CLANG_CROSS_FLAGS="-Wno-error"
 make -j$(nproc --all) LLVM=-20 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnuabeihf- CC=clang LD=ld.lld HOSTCC=clang HOSTLD=ld.lld O=out KCFLAGS+=-O2 KCFLAGS+=-Wno-error gki_defconfig all
 echo ">>> 内核编译成功！"
 
