@@ -60,6 +60,21 @@ on:
           - 'false'
           - 'standard'
           - 'extend'
+      landlock_enable:
+        description: '是否启用 Landlock LSM（进程自沙箱；默认关闭）'
+        required: true
+        type: boolean
+        default: 'false'
+      ntsync_enable:
+        description: '是否启用 NTSync（Wine/Proton；使用 8650 的 6.1 补丁；默认关闭）'
+        required: true
+        type: boolean
+        default: 'false'
+      fs_extra_enable:
+        description: '是否启用 NTFS3 与 SquashFS 文件系统支持'
+        required: true
+        type: boolean
+        default: 'true'
       better_net:
         description: '是否开启网络功能拓展配置(用于为ipset及需要iptables等高级网络功能内核支持的程序提供支持)'
         required: true
@@ -416,6 +431,22 @@ jobs:
           echo "CONFIG_IP_SET_HASH_NETPORT=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_IP_SET_HASH_NETIFACE=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_IP_SET_LIST_SET=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_NF_TABLES=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_NF_TABLES_INET=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_NF_TABLES_IPV4=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_NF_TABLES_IPV6=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_NF_TABLES_ARP=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_NF_TABLES_NETDEV=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_NF_TABLES_BRIDGE=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_NFT_NAT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_NFT_MASQ=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_NFT_REDIR=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_NFT_CT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_NFT_LOG=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_NFT_LIMIT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_NFT_REJECT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_NFT_FIB_INET=y" >> ./common/arch/arm64/configs/gki_defconfig
+
           #启用 IPv6 网络地址转换
           echo "CONFIG_IP6_NF_NAT=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_IP6_NF_TARGET_MASQUERADE=y" >> ./common/arch/arm64/configs/gki_defconfig
@@ -475,11 +506,6 @@ jobs:
             # 修补 oplus_bsp_midas 行为，避免开机崩溃
             wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/droidspaces_patch/fix_oplus_bsp_midas.patch
             patch -p1 -F 3 < fix_oplus_bsp_midas.patch || true
-            # 应用 NTSync 补丁
-            wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/droidspaces_patch/ntsync_base.patch
-            wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/droidspaces_patch/ntsync_compat_${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch
-            patch -p1 -F 3 < ntsync_base.patch || true
-            patch -p1 -F 3 < ntsync_compat_${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch || true
             # 开启 Droidspaces 容器所需内核支持
             echo "CONFIG_PID_NS=y" >> ./arch/arm64/configs/gki_defconfig
             echo "CONFIG_IPC_NS=y" >> ./arch/arm64/configs/gki_defconfig
@@ -497,8 +523,6 @@ jobs:
             #echo "CONFIG_FW_LOADER_COMPRESS=y" >> ./arch/arm64/configs/gki_defconfig
             #echo "CONFIG_BRIDGE_NETFILTER=y" >> ./arch/arm64/configs/gki_defconfig
             #echo "CONFIG_NF_TABLES=y" >> ./arch/arm64/configs/gki_defconfig
-            # 开启 NTSync
-            echo "CONFIG_NTSYNC=y" >> ./arch/arm64/configs/gki_defconfig
             if [[ "${{ github.event.inputs.droidspaces_enable }}" == "extend" ]]; then
               echo "正在启用容器环境扩展支持..."
               # 开启虚拟 HCI 设备支持
@@ -512,6 +536,42 @@ jobs:
             fi
           fi
 
+      - name: 启用 Landlock LSM
+        if: inputs.landlock_enable
+        run: |
+          echo "正在启用 Landlock LSM..."
+          cd kernel_workspace
+          echo "CONFIG_SECURITY_LANDLOCK=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_SECURITY_PATH=y" >> ./common/arch/arm64/configs/gki_defconfig
+          if [[ "${{ inputs.baseband_guard }}" == "true" ]]; then
+            echo 'CONFIG_LSM="landlock,lockdown,yama,loadpin,safesetid,integrity,selinux,baseband_guard,smack,tomoyo,apparmor,bpf"' >> ./common/arch/arm64/configs/gki_defconfig
+          else
+            echo 'CONFIG_LSM="landlock,lockdown,yama,loadpin,safesetid,integrity,selinux,smack,tomoyo,apparmor,bpf"' >> ./common/arch/arm64/configs/gki_defconfig
+          fi
+      - name: 启用 NTFS3 与 SquashFS
+        if: inputs.fs_extra_enable
+        run: |
+          echo "正在启用 NTFS3 与 SquashFS..."
+          cd kernel_workspace
+          echo "CONFIG_NTFS3_FS=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_NTFS3_LZX_XPRESS=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_NTFS3_FS_POSIX_ACL=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_SQUASHFS=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_SQUASHFS_XATTR=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_SQUASHFS_ZLIB=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_SQUASHFS_LZ4=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_SQUASHFS_XZ=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_SQUASHFS_ZSTD=y" >> ./common/arch/arm64/configs/gki_defconfig
+      - name: 启用 NTSync
+        if: inputs.ntsync_enable
+        run: |
+          echo "正在启用 NTSync（8650 6.1 补丁）..."
+          cd kernel_workspace/common
+          wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/droidspaces_patch/ntsync_base.patch
+          wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/droidspaces_patch/ntsync_compat_${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch
+          patch -p1 -F 3 < ntsync_base.patch || true
+          patch -p1 -F 3 < ntsync_compat_${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch || true
+          echo "CONFIG_NTSYNC=y" >> ./arch/arm64/configs/gki_defconfig
       - name: 启用三星SSG IO调度器
         if: inputs.ssg_enable
         run: |
