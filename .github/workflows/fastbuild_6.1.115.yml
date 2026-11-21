@@ -365,13 +365,15 @@ jobs:
         run: |
           echo "正在集成 NoMount 内核支持…"
           cd kernel_workspace
-          if [ ! -f ../nomount_patch/apply_nomount.sh ]; then
-            echo "未找到 ../nomount_patch/apply_nomount.sh，请确认仓库根目录包含 nomount_patch/" >&2
-            exit 1
-          fi
-          sh ../nomount_patch/apply_nomount.sh ./common
+          mkdir -p nomount_patch/src
+          NOMOUNT_URL="https://github.com/${GITHUB_REPOSITORY}/raw/refs/heads/${GITHUB_REF_NAME}/nomount_patch"
+          wget -q "${NOMOUNT_URL}/apply_nomount.sh" -O nomount_patch/apply_nomount.sh
+          wget -q "${NOMOUNT_URL}/src/Kconfig" -O nomount_patch/src/Kconfig
+          wget -q "${NOMOUNT_URL}/src/Makefile" -O nomount_patch/src/Makefile
+          wget -q "${NOMOUNT_URL}/src/nomount.c" -O nomount_patch/src/nomount.c
+          wget -q "${NOMOUNT_URL}/src/nomount.h" -O nomount_patch/src/nomount.h
+          sh nomount_patch/apply_nomount.sh ./common
           echo "CONFIG_NOMOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
-
       - name: 添加SUSFS 配置项
         if: inputs.susfs_enable
         run: |
